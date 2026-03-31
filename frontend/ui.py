@@ -81,24 +81,26 @@ if st.session_state.observation and not st.session_state.done:
         decision = st.selectbox("Decision", ["allow", "warn", "remove"])
 
     if st.button("🚀 Submit Action"):
-       payload = {
-           "action": {
-               "action_type": action_type,
-               "label": label,
-               "decision": decision,
-               "reasoning": reasoning
-           }
+
+    payload = {
+        "action": {
+            "action_type": action_type,
+            "label": label,
+            "decision": decision
         }
+    }
 
     res = requests.post(f"{API_BASE}/step", json=payload)
     data = res.json()
 
-    st.session_state.observation = data["observation"]
-    st.session_state.done = data["done"]
+    if "observation" in data:
+        st.session_state.observation = data["observation"]
+        st.session_state.done = data["done"]
 
-    st.success(f"Reward: {data['reward']}")
-    st.json(data["info"])
-
+        st.success(f"Reward: {data['reward']}")
+        st.json(data["info"])
+    else:
+        st.error(data)
 # -----------------------------
 # Done
 # -----------------------------

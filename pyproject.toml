@@ -1,0 +1,19 @@
+[project]
+requires-python = ">=3.10,<3.13"
+name = "contentmod-env"
+version = "0.1.0"
+description = "Context-aware content moderation OpenEnv environment"
+authors = [
+    { name="Jiya Jain" }
+]
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "openenv-core>=0.2.0"
+]
+
+[tool.openenv]
+entrypoint = "server.app:app"
+[project.scripts]
+server = "server.app:main"

@@ -1,0 +1,70 @@
+name: context-aware-content-moderation
+version: "1.0.0"
+description: >
+  A content moderation environment where an agent must classify
+  user-generated posts and decide moderation actions (allow/warn/remove)
+  using post content, user history, community flags, and platform rules.
+
+author: "OpenEnv Hackathon"
+license: MIT
+
+entrypoint: server.app:main
+
+server:
+  host: "0.0.0.0"
+  port: 7860
+  endpoints:
+    reset:  POST /reset
+    step:   POST /step
+    state:  GET /state
+    health: GET /health
+
+observation_space:
+  type: object
+  properties:
+    post_id:          { type: string }
+    content:          { type: string }
+    user_history:     { type: array, items: { type: string } }
+    flags:            { type: array, items: { type: string } }
+    platform_rules:   { type: array, items: { type: string } }
+    available_actions: { type: array, items: { type: string } }
+    step_number:      { type: integer }
+    classified:       { type: boolean }
+    moderated:        { type: boolean }
+
+action_space:
+  type: object
+  required: [action_type]
+  properties:
+    action_type:
+      type: string
+      enum: [classify, moderate]
+    label:
+      type: string
+      enum: [spam, abusive, safe]
+    decision:
+      type: string
+      enum: [allow, warn, remove]
+    reasoning:
+      type: string
+
+tasks:
+  - id: task_easy_001
+    difficulty: easy
+    description: Obvious spam post with phishing link and known spam history
+  - id: task_medium_001
+    difficulty: medium
+    description: Explicit targeted harassment requiring removal
+  - id: task_hard_001
+    difficulty: hard
+    description: Figurative political criticism; correct answer is "safe / allow"
+
+reward:
+  range: [-1.0, 1.1]
+  formula: "0.4 * classification_score + 0.6 * decision_score + early_bonus - step_penalty"
+  notes:
+    - "Dangerous mistake (allow harmful content) yields -1.0 on decision"
+    - "Early bonus of 0.1 for completing in ≤2 steps with positive base reward"
+    - "Step penalty of 0.05 per extra step beyond threshold"
+
+max_steps_per_episode: 10

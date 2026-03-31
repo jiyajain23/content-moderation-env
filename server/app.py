@@ -76,15 +76,19 @@ def reset(request: Optional[ResetRequest] = None):
 
 @app.post("/step", response_model=StepResult)
 def step(request: StepRequest):
-    # Validate the action using the method you defined in models.py
+    print("👉 Incoming action:", request.action)
+
     validation_error = request.action.validate_action()
     if validation_error:
+        print("❌ Validation error:", validation_error)
         raise HTTPException(status_code=422, detail=validation_error)
         
     try:
         obs, reward, done, info = env.step(request.action)
+        print("✅ Step success:", obs, reward, done)
         return StepResult(observation=obs, reward=reward, done=done, info=info)
     except Exception as e:
+        print("🔥 STEP ERROR:", str(e))   # 👈 IMPORTANT
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/state", response_model=StateResult)

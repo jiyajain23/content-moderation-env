@@ -86,14 +86,14 @@ if st.session_state.observation and not st.session_state.done:
            }
         }
 
-        res = requests.post(f"{API_BASE}/step", json=payload)
-        data = res.json()
+    res = requests.post(f"{API_BASE}/step", json=payload)
+    data = res.json()
 
-        st.session_state.observation = data["observation"]
-        st.session_state.done = data["done"]
+    st.session_state.observation = data["observation"]
+    st.session_state.done = data["done"]
 
-        st.success(f"Reward: {data['reward']}")
-        st.json(data["info"])
+    st.success(f"Reward: {data['reward']}")
+    st.json(data["info"])
 
 # -----------------------------
 # Done

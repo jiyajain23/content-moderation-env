@@ -18,21 +18,23 @@ You are a content moderation agent.
 Post:
 {obs['content']}
 
-User history:
-{obs['user_history']}
-
-Flags:
-{obs['flags']}
+Available actions:
+{obs['available_actions']}
 
 Rules:
-{obs['platform_rules']}
+- If only "moderate" is available → you MUST NOT classify
+- If only "classify" is available → you MUST NOT moderate
+- Choose ONLY from available_actions
 
-Return JSON:
+Label must be one of: "spam", "abusive", "safe"
+Decision must be one of: "allow", "warn", "remove"
+
+Return STRICT JSON:
 {{
- "action_type": "classify or moderate",
- "label": "spam/abusive/safe",
- "decision": "allow/warn/remove",
- "reasoning": "short explanation"
+  "action_type": "...",
+  "label": "...",
+  "decision": "...",
+  "reasoning": "..."
 }}
 """
 
@@ -42,8 +44,17 @@ Return JSON:
         temperature=0
     )
 
-    return eval(response.choices[0].message.content)
+    import json
+    return json.loads(response.choices[0].message.content)
+def normalize_label(label):
+    label = label.lower()
 
+    if "spam" in label:
+        return "spam"
+    elif "hate" in label or "abuse" in label or "threat" in label:
+        return "abusive"
+    else:
+        return "safe"
 
 def run_task(task_id):
     res = requests.post(f"{API_BASE}/reset", json={"task_id": task_id})
@@ -52,17 +63,44 @@ def run_task(task_id):
     total_reward = 0
 
     for _ in range(10):
+        available = obs.get("available_actions", obs.get("available", [])) or []
+        if not isinstance(available, list):
+            available = []
+        if not available:
+            print("❌ No available actions in observation:", obs)
+            break
+
         action = get_action(obs)
+        action_type = (action.get("action_type") or "").lower()
+        if "classify" in action_type:
+            action["action_type"] = "classify"
+        elif "moderate" in action_type:
+            action["action_type"] = "moderate"
+        else:
+            action["action_type"] = available[0]
+
+        if action["action_type"] not in available:
+            action["action_type"] = available[0]
+
+        if action["action_type"] == "classify":
+            action["label"] = normalize_label(action.get("label", "safe"))
+            action["decision"] = None
+        else:
+            action["label"] = None
+            action["decision"] = (action.get("decision") or "allow").lower()
 
         res = requests.post(f"{API_BASE}/step", json={"action": action})
         data = res.json()
-
-        obs = data["observation"]
+        print("STEP RESPONSE:", data)
+        if "observation" not in data:
+            print("❌ Step failed:", data)
+            break
         total_reward += data["reward"]
+        obs = data["observation"]
 
         if data["done"]:
             break
-
+        
     return total_reward
 
 

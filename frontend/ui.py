@@ -29,14 +29,14 @@ task = st.sidebar.selectbox(
 
 if st.sidebar.button("🔄 Reset Environment"):
     res = requests.post(f"{API_BASE}/reset", json={"task_id": task})
-    st.session_state.observation = res.json()
+    st.session_state.observation = res.json()["observation"]
     st.session_state.done = False
 
 # -----------------------------
 # Display Observation
 # -----------------------------
 if st.session_state.observation:
-    obs = st.session_state.observation
+    obs = st.session_state.observation or {}
 
     st.subheader("📥 Observation")
 
@@ -77,10 +77,13 @@ if st.session_state.observation and not st.session_state.done:
         decision = st.selectbox("Decision", ["allow", "warn", "remove"])
 
     if st.button("🚀 Submit Action"):
-        payload = {
-            "action_type": action_type,
-            "label": label,
-            "decision": decision
+       payload = {
+           "action": {
+               "action_type": action_type,
+               "label": label,
+               "decision": decision,
+               "reasoning": reasoning
+           }
         }
 
         res = requests.post(f"{API_BASE}/step", json=payload)

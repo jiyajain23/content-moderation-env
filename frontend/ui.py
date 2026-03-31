@@ -24,13 +24,17 @@ st.sidebar.header("⚙️ Controls")
 
 task = st.sidebar.selectbox(
     "Select Task",
-    ["task_easy", "task_medium", "task_hard"]
+    ["task_easy_001", "task_medium_001", "task_hard-001"]
 )
 
 if st.sidebar.button("🔄 Reset Environment"):
     res = requests.post(f"{API_BASE}/reset", json={"task_id": task})
-    st.session_state.observation = res.json()["observation"]
-    st.session_state.done = False
+    data = res.json()
+    if "observation" in data:
+        st.session_state.observation = data["observation"]
+    else:
+        st.error(data)
+        st.session_state.done = False
 
 # -----------------------------
 # Display Observation

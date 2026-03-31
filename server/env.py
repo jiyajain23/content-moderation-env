@@ -171,3 +171,4 @@ class ModerationEnv:
                 "final_reward": compute_episode_reward(clf_score, dec_score, s.step_count),
             })
         return info
+

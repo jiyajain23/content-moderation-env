@@ -3,7 +3,7 @@ import requests
 import json
 import time
 from openai import OpenAI
-from inference import get_llm_action
+from inference import get_action
 client = OpenAI(
     api_key=st.secrets.get("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1"

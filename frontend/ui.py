@@ -198,8 +198,17 @@ if st.session_state.observation:
             
                         res = requests.post(f"{API_BASE}/step", json={"action": action})
                         data = res.json()
-                        st.session_state.observation = data["observation"]
-                        st.session_state.done = data["done"]
+
+                        if "observation" in data:
+                            st.session_state.observation = data["observation"]
+                            st.session_state.done = data.get("done", False)
+                            st.session_state.score += data.get("reward", 0)
+                            st.rerun()
+                        elif "detail" in data:
+                            st.error(f"API Error: {data['detail']}")
+                        else:
+    # If there's no observation, it's likely the end of the episode
+                        st.session_state.done = True
                         st.session_state.score += data.get("reward", 0)
                         st.rerun()
 

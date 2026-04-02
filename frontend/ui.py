@@ -3,6 +3,13 @@ import requests
 import json
 import time
 from openai import OpenAI
+import os
+
+
+try:
+    API_BASE = st.secrets["API_BASE_URL"]
+except:
+    API_BASE = os.getenv("API_BASE_URL", "http://localhost:7860")
 client = OpenAI(
     api_key=st.secrets.get("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1"

@@ -4,13 +4,8 @@ import json
 import time
 from openai import OpenAI
 
-# -----------------------------
-# Config
-# -----------------------------
-API_BASE = st.secrets.get("API_BASE_URL", "http://localhost:7860")
-
 client = OpenAI(
-    api_key=st.secrets.get("HF_TOKEN", ""),
+    api_key=st.secrets.get("GROQ_API_KEY"),
     base_url="https://api.groq.com/openai/v1"
 )
 
@@ -43,56 +38,71 @@ def normalize_label(label):
 
 def get_llm_action(obs):
     prompt = f"""
-You are a content moderation agent.
+You are a strict content moderation agent.
 
-Post:
-{obs['content']}
+RULES:
+- If "classify" is available → you MUST classify
+- If "moderate" is available → you MUST moderate
+- NEVER do both
 
-Available actions:
-{obs['available_actions']}
+VALID OUTPUT:
 
-Rules:
-- action_type MUST be exactly one of: "classify" OR "moderate"
-- Choose ONLY from available_actions
-- Labels: spam, abusive, safe
-- Decisions: allow, warn, remove
-
-Return STRICT JSON:
+For classify:
 {{
   "action_type": "classify",
-  "label": "spam",
-  "decision": "remove",
+  "label": "spam | abusive | safe",
   "reasoning": "short explanation"
 }}
+
+For moderate:
+{{
+  "action_type": "moderate",
+  "decision": "allow | warn | remove",
+  "reasoning": "short explanation"
+}}
+
+Observation:
+{json.dumps(obs, indent=2)}
+
+Return ONLY JSON.
 """
 
-    res = client.chat.completions.create(
-        model=st.secrets.get("MODEL_NAME", "llama3-70b-8192"),
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
-    )
+    try:
+        res = client.chat.completions.create(
+            model=st.secrets.get("MODEL_NAME", "llama3-70b-8192"),
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
 
-    action = json.loads(res.choices[0].message.content)
+        output = res.choices[0].message.content.strip()
 
-    # Fix action_type
-    if action["action_type"] not in ["classify", "moderate"]:
-        action["action_type"] = obs["available_actions"][0]
+        # 🔥 Handle ```json blocks
+        if "```" in output:
+            output = output.split("```")[1]
+            if output.startswith("json"):
+                output = output[4:]
 
-    # Respect available actions
-    if action["action_type"] not in obs["available_actions"]:
-        action["action_type"] = obs["available_actions"][0]
+        action = json.loads(output)
 
-    # Normalize label
-    if "label" in action:
-        action["label"] = normalize_label(action["label"])
+        # 🔧 Enforce valid action_type
+        if action["action_type"] not in obs["available_actions"]:
+            action["action_type"] = obs["available_actions"][0]
 
-    # Fix structure
-    if action["action_type"] == "classify":
-        action["decision"] = None
-    else:
-        action["label"] = None
+        # 🔧 Normalize label
+        if action.get("label"):
+            action["label"] = normalize_label(action["label"])
 
-    return action
+        # 🔧 Fix structure
+        if action["action_type"] == "classify":
+            action.pop("decision", None)
+        else:
+            action.pop("label", None)
+
+        return action
+
+    except Exception as e:
+        st.error(f"LLM Error: {e}")
+        return None
 
 # -----------------------------
 # Controls
@@ -163,6 +173,9 @@ if st.session_state.observation and not st.session_state.done:
             time.sleep(1)
             action = get_llm_action(obs)
 
+            if not action:
+                st.stop()
+
         st.success("Decision Generated ✅")
         st.json(action)
 
@@ -228,28 +241,31 @@ if st.session_state.observation and not st.session_state.done:
 # -----------------------------
 if st.session_state.observation and not st.session_state.done:
     if st.button("⚡ Auto Run Agent"):
-        obs = st.session_state.observation
+    obs = st.session_state.observation
 
-        for i in range(5):
-            action = get_llm_action(obs)
+    for i in range(5):
+        action = get_llm_action(obs)
 
-            res = requests.post(f"{API_BASE}/step", json={"action": action})
-            data = res.json()
+        if not action:
+            break
 
-            if "observation" not in data:
-                st.error(data)
-                break
+        res = requests.post(f"{API_BASE}/step", json={"action": action})
+        data = res.json()
 
-            obs = data["observation"]
-            st.session_state.observation = obs
-            st.session_state.score += data["reward"]
+        if "observation" not in data:
+            st.error(data)
+            break
 
-            st.write(f"Step {i+1}: {action}")
-            time.sleep(1)
+        obs = data["observation"]
+        st.session_state.observation = obs
+        st.session_state.score += data["reward"]
 
-            if data["done"]:
-                st.session_state.done = True
-                break
+        st.write(f"Step {i+1}: {action}")
+        time.sleep(1)
+
+        if data["done"]:
+            st.session_state.done = True
+            break
 
 # -----------------------------
 # Score + Done

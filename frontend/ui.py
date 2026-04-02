@@ -58,30 +58,57 @@ def normalize_label(label):
     return "safe"
 
 def clean_json_output(output):
-    match = re.search(r'\{.*\}', output, re.DOTALL)
-    return match.group(0) if match else output
+    """Robust extraction of JSON from a string."""
+    try:
+        # Look for anything between the first { and the last }
+        match = re.search(r'\{.*\}', output, re.DOTALL)
+        if match:
+            return match.group(0)
+        return output
+    except Exception:
+        return output
 
 def get_llm_action(obs):
-    prompt = f"""You are a content moderation agent. Analyze context and rules.
-Return ONLY valid JSON.
-Observation: {json.dumps(obs, indent=2)}
-"""
+    # Enhanced prompt to be even more strict with the LLM
+    prompt = f"""You are a content moderation agent. 
+    You MUST return ONLY a JSON object. 
+    Available actions for this step: {obs['available_actions']}
+    
+    If classifying: {{"action_type": "classify", "label": "spam|abusive|safe", "reasoning": "..."}}
+    If moderating: {{"action_type": "moderate", "decision": "allow|warn|remove", "reasoning": "..."}}
+    
+    Observation: {json.dumps(obs)}"""
+    
     try:
         res = client.chat.completions.create(
             model=st.secrets.get("MODEL_NAME", "llama3-70b-8192"),
-            messages=[{"role": "system", "content": "You are a JSON-only response bot."},
+            messages=[{"role": "system", "content": "You are a specialized JSON generator for content moderation. Do not talk, only output JSON."},
                       {"role": "user", "content": prompt}],
             temperature=0
         )
         raw_content = res.choices[0].message.content.strip()
-        action = json.loads(clean_json_output(raw_content))
-        if action["action_type"] not in obs["available_actions"]:
+        
+        # Clean and Parse
+        json_str = clean_json_output(raw_content)
+        action = json.loads(json_str)
+        
+        # --- THE FIX: Ensure action_type exists ---
+        if "action_type" not in action:
+            # If the LLM missed the key, we force the first available action
             action["action_type"] = obs["available_actions"][0]
-        if action.get("label"):
-            action["label"] = normalize_label(action["label"])
+            
+        # Normalize keys based on action type
+        if action["action_type"] == "classify":
+            action.pop("decision", None)
+            if "label" not in action: action["label"] = "safe"
+        elif action["action_type"] == "moderate":
+            action.pop("label", None)
+            if "decision" not in action: action["decision"] = "allow"
+            
         return action
     except Exception as e:
-        st.error(f"LLM Error: {e}")
+        # This catches the error and shows it in the UI instead of crashing
+        st.error(f"LLM Parsing Error: {e}. Raw Output: {raw_content[:100]}...")
         return None
 
 # -----------------------------

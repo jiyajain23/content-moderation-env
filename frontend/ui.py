@@ -106,20 +106,27 @@ Observation:
 # Sidebar Controls
 # -----------------------------
 with st.sidebar:
-    st.header("⚙️ Environment Settings")
-    task = st.selectbox("Scenario Difficulty", ["task_easy_001", "task_medium_001", "task_hard_001"])
+    st.divider()
+    st.subheader("✍️ Test Your Own Content")
+    custom_text = st.text_area("Paste a post here to test:", placeholder="e.g. You are a loser!")
     
-    if st.button("🔄 Reset & Load New Task", use_container_width=True, type="primary"):
-        res = requests.post(f"{API_BASE}/reset", json={"task_id": task})
-        data = res.json()
-        if "observation" in data:
-            st.session_state.observation = data["observation"]
+    if st.button("📥 Load Custom Post"):
+        if custom_text:
+            # We "fake" a reset observation with your text
+            st.session_state.observation = {
+                "post_id": "custom_001",
+                "content": custom_text,
+                "user_history": ["No history for custom posts"],
+                "flags": ["Manually entered"],
+                "platform_rules": ["Standard community guidelines apply."],
+                "available_actions": ["classify"],
+                "step_number": 0,
+                "classified": False,
+                "moderated": False
+            }
             st.session_state.done = False
             st.session_state.score = 0
-            st.session_state.history = []
-            st.toast("Environment Reset!", icon="🔄")
-        else:
-            st.error("Connection Failed")
+            st.toast("Custom content loaded!")
 
     st.divider()
     st.subheader("📊 Session Statistics")
@@ -165,16 +172,16 @@ if st.session_state.observation:
         
         # AI AGENT BOX
         with st.expander("🤖 AI Agent Control", expanded=not st.session_state.done):
-            if st.button("⚡ Run AI Decision", use_container_width=True):
-                with st.spinner("Llama-3 analyzing..."):
-                    action = get_llm_action(obs)
-                    if action:
+           if st.button("⚡ Run AI Decision", use_container_width=True):
+               with st.spinner("Llama-3 is thinking..."):
+                   action = get_llm_action(obs)
+                   if action:
+                       with st.chat_message("assistant", avatar="🧠"):
+                           st.write("**My Reasoning:**")
+                           st.info(action.get("reasoning", "The AI didn't provide specific reasoning."))
                         res = requests.post(f"{API_BASE}/step", json={"action": action})
                         data = res.json()
-                        st.session_state.observation = data["observation"]
-                        st.session_state.done = data["done"]
-                        st.session_state.score += data.get("reward", 0)
-                        st.rerun()
+            # ... rest of your session state logic ...
 
         # MANUAL OVERRIDE BOX
         with st.expander("🛠️ Manual Override"):

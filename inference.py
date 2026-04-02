@@ -4,10 +4,10 @@ from openai import OpenAI
 
 API_BASE = os.getenv("API_BASE_URL")
 MODEL_NAME = os.getenv("MODEL_NAME")
-HF_TOKEN = os.getenv("HF_TOKEN")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 client = OpenAI(
-    api_key=HF_TOKEN,
+    api_key=GROQ_API_KEY,
     base_url="https://api.groq.com/openai/v1"  # Groq-compatible
 )
 
@@ -110,4 +110,5 @@ if __name__ == "__main__":
     for t in tasks:
         score = run_task(t)
         print(f"{t}: {score}")
+
 

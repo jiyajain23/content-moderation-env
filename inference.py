@@ -5,15 +5,22 @@ import requests
 # Config (robust)
 # -----------------------------
 try:
+    # -----------------------------
+# Config (FIXED)
+# -----------------------------
     import streamlit as st
-    API_BASE = st.secrets.get("API_BASE_URL")
-    MODEL_NAME = st.secrets.get("MODEL_NAME", "llama3-70b-8192")
-    GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
+
+    if "API_BASE_URL" in st.secrets:
+        API_BASE = st.secrets["API_BASE_URL"]
+    else:
+        API_BASE = "http://localhost:7860"
+        MODEL_NAME = st.secrets.get("MODEL_NAME", "llama3-70b-8192")
+        GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
 except:
     API_BASE = os.getenv("API_BASE_URL")
     MODEL_NAME = os.getenv("MODEL_NAME", "llama3-70b-8192")
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-
+st.sidebar.write("🔗 API_BASE:", API_BASE)
 # 🔥 Fail fast if missing
 st.write("GROQ KEY EXISTS:", "GROQ_API_KEY" in st.secrets)
 st.write("KEY VALUE:", st.secrets.get("GROQ_API_KEY"))

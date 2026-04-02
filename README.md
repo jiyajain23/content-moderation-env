@@ -18,10 +18,11 @@ pinned: false
 
 🔗 **API Base URL:**  
 This environment is fully deployed on :[https://jiyajain23-content-moderation-env.hf.space/](https://jiyajain23-content-moderation-env.hf.space/) and can be accessed programmatically via REST API.
-🔗 **Frontend:**  
-[https://jiyajain23-content-moderation-env.hf.space](https://content-moderation-env-7q47km67y2sbbehtqpmvyc.streamlit.app/)
-🔗 **Backend Hugging Face Space:** 
-[https://huggingface.co/spaces/jiyajain23/content-moderation-env](https://huggingface.co/spaces/jiyajain23/content-moderation-env)
+
+ 
+[🔗 **Frontend:** ](https://content-moderation-env-7q47km67y2sbbehtqpmvyc.streamlit.app/)
+
+[🔗 **Backend Hugging Face Space:** ](https://huggingface.co/spaces/jiyajain23/content-moderation-env)
 
 
 ---
@@ -181,67 +182,101 @@ reward = 0.4 × classification_score
 ```
 
 ---
+Here’s a **clean, corrected, and polished README section** you can directly use 👇 (fixed for Groq, env variables, and your actual setup)
 
-## 7. Setup Instructions
+---
 
-### Local run
+## 7. ⚙️ Setup Instructions
+
+### 🔹 Run Locally
 
 ```bash
-# Clone / download the project
+# Clone the repository
+git clone <your-repo-url>
 cd project_root
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Start the server
+# Start the FastAPI server
 uvicorn server.app:app --host 0.0.0.0 --port 7860 --reload
 
-# Test health
+# Test health endpoint
 curl http://localhost:7860/health
+```
 
-# Run baseline inference (requires OPENAI_API_KEY)
-export OPENAI_API_KEY="sk-..."
+### 🤖 Run the Agent (`inference.py`)
+
+Set environment variables before running:
+
+```bash
+export HF_TOKEN="your_groq_api_key"
 export API_BASE_URL="http://localhost:7860"
-export LLM_BASE_URL="https://api.openai.com/v1"
-export MODEL_NAME="gpt-4o-mini"
+export MODEL_NAME="llama3-70b-8192"
+```
+
+If using Groq (recommended):
+
+```bash
+export LLM_BASE_URL="https://api.groq.com/openai/v1"
+```
+
+Run the agent:
+
+```bash
 python inference.py
 ```
 
-If you're using a Groq OpenAI-compatible endpoint, set:
-`export LLM_BASE_URL="https://api.groq.com/openai/v1"`
+---
 
-### Docker run
+### 🐳 Run with Docker
 
 ```bash
-# Build
+# Build the image
 docker build -t content-moderation-env .
 
-# Run
+# Run the container
 docker run -p 7860:7860 content-moderation-env
+```
 
-# With API key for inference (optional)
+(Optional: pass API key)
+
+```bash
 docker run -p 7860:7860 \
-  -e OPENAI_API_KEY="sk-..." \
+  -e HF_TOKEN="your_groq_api_key" \
   content-moderation-env
 ```
 
 ---
 
-## 🤖 Running the Agent (inference.py)
+## 🤖 Running the Agent on Deployed API
 
-This project includes a baseline LLM agent (`inference.py`) that interacts with the environment.
+Before running `inference.py`, update:
 
-### Important: Update API URL
-Before running, set:
+```python
+API_BASE_URL = "https://<your-username>-content-moderation-env.hf.space"
+```
+
+Example:
+
 ```python
 API_BASE_URL = "https://jiyajain23-content-moderation-env.hf.space"
 ```
-## 8. Hugging Face Deployment
 
-1. Create a new **Space** on [huggingface.co/spaces](https://huggingface.co/spaces)
-2. Choose **Docker** as the SDK
-3. Set **Port** to `7860`
-4. Push the repository:
+---
+
+## 8. 🚀 Hugging Face Deployment
+
+1. Go to [https://huggingface.co/spaces](https://huggingface.co/spaces)
+
+2. Click **Create new Space**
+
+3. Select:
+
+   * **SDK:** Docker
+   * **Port:** `7860`
+
+4. Push your code:
 
 ```bash
 git init
@@ -251,28 +286,52 @@ git commit -m "Initial OpenEnv submission"
 git push hf main
 ```
 
-5. Set any required secrets (e.g., `OPENAI_API_KEY`) in Space Settings → Repository secrets.
+5. Add secrets in **Settings → Repository secrets**:
 
-The Space will automatically build the Docker image and expose the environment on `https://<your-username>-<space-name>.hf.space`.
+   * `HF_TOKEN`
+
+After deployment, your API will be live at:
+
+```
+https://<your-username>-<space-name>.hf.space
+```
 
 ---
-## 🎨 Interactive Demo (Optional UI)
 
-A simple UI can be built using :contentReference[oaicite:1]{index=1} to interact with the environment.
+## 🎨 Interactive Demo (UI)
 
-### Features
+A simple UI is included to interact with the environment in real-time.
 
-- Reset tasks interactively
-- View content + context
-- Choose actions manually
-- Observe rewards in real-time
+### ✨ Features
 
-### Run locally
+* Reset tasks dynamically
+* View content and user context
+* Manual + AI-based moderation
+* Real-time reward tracking
+
+---
+
+### ▶️ Run UI Locally (Streamlit)
 
 ```bash
-pip install gradio requests
-python ui.py
+pip install streamlit requests openai
+streamlit run ui.py
 ```
+
+---
+
+### 🔐 UI Configuration
+
+Create a `.streamlit/secrets.toml` file:
+
+```toml
+API_BASE_URL = "http://localhost:7860"
+GROQ_API_KEY = "your_groq_api_key"
+MODEL_NAME = "llama3-70b-8192"
+```
+
+---
+
 ## 9. API Reference
 ### Health Check`
 Returns:
@@ -337,11 +396,7 @@ Scores achieved by `gpt-4o-mini` at temperature=0:
 > The hard task is intentionally challenging — models that rely on surface-level signals (without reading `user_history` and `platform_rules`) will misclassify it.
 
 ---
-## 🧠 System Architecture
 
-The system follows a full agent-environment loop:
-
-## Project Structure
 ## 🧠 System Architecture
 
 The system follows a full agent-environment loop:
@@ -359,6 +414,7 @@ project_root/
 ├── requirements.txt
 ├── inference.py     # Baseline LLM agent
 └── README.md
+└── uv.lock
 ```
 
 ---

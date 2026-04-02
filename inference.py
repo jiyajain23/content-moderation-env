@@ -110,3 +110,4 @@ if __name__ == "__main__":
     for t in tasks:
         score = run_task(t)
         print(f"{t}: {score}")
+

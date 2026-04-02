@@ -149,6 +149,7 @@ with st.sidebar:
             st.session_state.done = False
             st.session_state.score = 0
             st.toast("Custom content loaded!")
+
 # -----------------------------
 # Main Dashboard
 # -----------------------------
@@ -192,15 +193,15 @@ if st.session_state.observation:
                     action = get_llm_action(obs)
                     if action:
                         with st.chat_message("assistant", avatar="🧠"):
-                        st.write("**My Reasoning:**")
-                        st.info(action.get("reasoning", "The AI didn't provide specific reasoning."))
+                            st.write("**My Reasoning:**")
+                            st.info(action.get("reasoning", "The AI didn't provide specific reasoning."))
             
-                res = requests.post(f"{API_BASE}/step", json={"action": action})
-                data = res.json()
-                st.session_state.observation = data["observation"]
-                st.session_state.done = data["done"]
-                st.session_state.score += data.get("reward", 0)
-                st.rerun()
+                        res = requests.post(f"{API_BASE}/step", json={"action": action})
+                        data = res.json()
+                        st.session_state.observation = data["observation"]
+                        st.session_state.done = data["done"]
+                        st.session_state.score += data.get("reward", 0)
+                        st.rerun()
 
         # MANUAL OVERRIDE BOX
         with st.expander("🛠️ Manual Override"):

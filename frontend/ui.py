@@ -208,9 +208,9 @@ if st.session_state.observation:
                             st.error(f"API Error: {data['detail']}")
                         else:
     # If there's no observation, it's likely the end of the episode
-                        st.session_state.done = True
-                        st.session_state.score += data.get("reward", 0)
-                        st.rerun()
+                            st.session_state.done = True
+                            st.session_state.score += data.get("reward", 0)
+                            st.rerun()
 
         # MANUAL OVERRIDE BOX
         with st.expander("🛠️ Manual Override"):

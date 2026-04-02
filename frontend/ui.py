@@ -16,7 +16,7 @@ except:
 
 # Initialize Groq Client
 client = OpenAI(
-    api_key=st.secrets.get("GROQ_API_KEY"),
+    api_key=st.secrets.get("HF_TOKEN"),
     base_url="https://api.groq.com/openai/v1"
 )
 

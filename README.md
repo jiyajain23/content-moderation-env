@@ -17,9 +17,12 @@ pinned: false
 ## 🚀 Live Environment
 
 🔗 **API Base URL:**  
-https://jiyajain23-content-moderation-env.hf.space
+This environment is fully deployed on :[https://jiyajain23-content-moderation-env.hf.space/](https://jiyajain23-content-moderation-env.hf.space/) and can be accessed programmatically via REST API.
+🔗 **Frontend:**  
+[https://jiyajain23-content-moderation-env.hf.space](https://content-moderation-env-7q47km67y2sbbehtqpmvyc.streamlit.app/)
+🔗 **Backend Hugging Face Space:** 
+[https://huggingface.co/spaces/jiyajain23/content-moderation-env](https://huggingface.co/spaces/jiyajain23/content-moderation-env)
 
-This environment is fully deployed on :contentReference[oaicite:0]{index=0} and can be accessed programmatically via REST API.
 
 ---
 

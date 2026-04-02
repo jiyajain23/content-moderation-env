@@ -11,6 +11,10 @@ MODEL_NAME = os.getenv("MODEL_NAME", "llama3-70b-8192")
 HF_TOKEN = os.getenv("HF_TOKEN")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
+TASK_NAME = "content_moderation"
+BENCHMARK = "content_moderation_env"
+MAX_STEPS = 10
+
 # -----------------------------
 # Client
 # -----------------------------
@@ -18,6 +22,26 @@ client = OpenAI(
     api_key=HF_TOKEN,
     base_url="https://api.groq.com/openai/v1"
 )
+
+# -----------------------------
+# Logging (STRICT FORMAT)
+# -----------------------------
+def log_start(task, env, model):
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+def log_step(step, action, reward, done, error):
+    error_val = error if error else "null"
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={str(done).lower()} error={error_val}",
+        flush=True
+    )
+
+def log_end(success, steps, rewards):
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(
+        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
+        flush=True
+    )
 
 # -----------------------------
 # LLM Action
@@ -49,19 +73,26 @@ Return STRICT JSON:
 }}
 """
 
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0
-    )
-
-    return json.loads(response.choices[0].message.content)
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception:
+        return {
+            "action_type": "classify",
+            "label": "safe",
+            "decision": None,
+            "reasoning": "fallback"
+        }
 
 # -----------------------------
 # Helpers
 # -----------------------------
 def normalize_label(label):
-    label = label.lower()
+    label = (label or "").lower()
     if "spam" in label:
         return "spam"
     elif "hate" in label or "abuse" in label or "threat" in label:
@@ -72,56 +103,79 @@ def normalize_label(label):
 # Main Task Runner
 # -----------------------------
 def run_task(task_id):
-    print(f"[START] Task={task_id}")
+    log_start(task_id, BENCHMARK, MODEL_NAME)
 
-    res = requests.post(f"{API_BASE_URL}/reset", json={"task_id": task_id})
-    obs = res.json()["observation"]
+    rewards = []
+    steps_taken = 0
+    success = False
 
-    total_reward = 0
-
-    for step in range(10):
-        available = obs.get("available_actions", []) or []
-        if not available:
-            print(f"[STEP] No available actions → stopping")
-            break
-
-        action = get_action(obs)
-
-        action_type = (action.get("action_type") or "").lower()
-        if "classify" in action_type:
-            action["action_type"] = "classify"
-        elif "moderate" in action_type:
-            action["action_type"] = "moderate"
-        else:
-            action["action_type"] = available[0]
-
-        if action["action_type"] not in available:
-            action["action_type"] = available[0]
-
-        if action["action_type"] == "classify":
-            action["label"] = normalize_label(action.get("label", "safe"))
-            action["decision"] = None
-        else:
-            action["label"] = None
-            action["decision"] = (action.get("decision") or "allow").lower()
-
-        res = requests.post(f"{API_BASE_URL}/step", json={"action": action})
+    try:
+        res = requests.post(f"{API_BASE_URL}/reset", json={"task_id": task_id})
         data = res.json()
 
-        print(f"[STEP] step={step} action={action} reward={data.get('reward')}")
-
         if "observation" not in data:
-            print(f"[STEP] Error response: {data}")
-            break
+            log_step(0, "reset_failed", 0.0, True, "reset_error")
+            log_end(False, 0, [])
+            return
 
-        total_reward += data["reward"]
         obs = data["observation"]
 
-        if data.get("done"):
-            break
+        for step in range(1, MAX_STEPS + 1):
+            available = obs.get("available_actions", []) or []
 
-    print(f"[END] Task={task_id} TotalReward={total_reward}")
-    return total_reward
+            if not available:
+                log_step(step, "no_available_actions", 0.0, True, "no_actions")
+                break
+
+            action = get_action(obs)
+
+            # Normalize action_type
+            action_type = (action.get("action_type") or "").lower()
+            if "classify" in action_type:
+                action["action_type"] = "classify"
+            elif "moderate" in action_type:
+                action["action_type"] = "moderate"
+            else:
+                action["action_type"] = available[0]
+
+            if action["action_type"] not in available:
+                action["action_type"] = available[0]
+
+            # Fix fields
+            if action["action_type"] == "classify":
+                action["label"] = normalize_label(action.get("label"))
+                action["decision"] = None
+            else:
+                action["label"] = None
+                action["decision"] = (action.get("decision") or "allow").lower()
+
+            # Step API
+            res = requests.post(f"{API_BASE_URL}/step", json={"action": action})
+            data = res.json()
+
+            reward = float(data.get("reward", 0.0))
+            done = bool(data.get("done", False))
+            error = None if "observation" in data else "step_error"
+
+            rewards.append(reward)
+            steps_taken = step
+
+            log_step(step, json.dumps(action), reward, done, error)
+
+            if "observation" not in data:
+                break
+
+            obs = data["observation"]
+
+            if done:
+                success = True
+                break
+
+    except Exception as e:
+        log_step(steps_taken + 1, "exception", 0.0, True, str(e))
+
+    finally:
+        log_end(success, steps_taken, rewards)
 
 # -----------------------------
 # Entry

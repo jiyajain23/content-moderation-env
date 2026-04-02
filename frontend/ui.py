@@ -241,7 +241,7 @@ if st.session_state.observation and not st.session_state.done:
 # -----------------------------
 if st.session_state.observation and not st.session_state.done:
     if st.button("⚡ Auto Run Agent"):
-    obs = st.session_state.observation
+        obs = st.session_state.observation
 
     for i in range(5):
         action = get_llm_action(obs)

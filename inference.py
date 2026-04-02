@@ -1,16 +1,30 @@
 import os
-import requests
 from openai import OpenAI
 
-API_BASE = os.getenv("API_BASE_URL")
-MODEL_NAME = os.getenv("MODEL_NAME")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+# -----------------------------
+# Config (robust)
+# -----------------------------
+try:
+    import streamlit as st
+    API_BASE = st.secrets.get("API_BASE_URL")
+    MODEL_NAME = st.secrets.get("MODEL_NAME", "llama3-70b-8192")
+    GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
+except:
+    API_BASE = os.getenv("API_BASE_URL")
+    MODEL_NAME = os.getenv("MODEL_NAME", "llama3-70b-8192")
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
+# 🔥 Fail fast if missing
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY not found")
+
+# -----------------------------
+# Client
+# -----------------------------
 client = OpenAI(
     api_key=GROQ_API_KEY,
-    base_url="https://api.groq.com/openai/v1"  # Groq-compatible
+    base_url="https://api.groq.com/openai/v1"
 )
-
 def get_action(obs):
     prompt = f"""
 You are a content moderation agent.

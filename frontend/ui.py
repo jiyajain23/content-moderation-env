@@ -29,7 +29,7 @@ st.markdown("""
     .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     .status-box { padding: 20px; border-radius: 10px; margin-bottom: 20px; }
     </style>
-    """, unsafe_content_allowed=True)
+    """, unsafe_allow_html=True) # Changed from unsafe_content_allowed
 
 st.title("🛡️ AI Content Moderation Simulator")
 st.caption("Context-Aware RL Environment powered by Groq & OpenEnv")

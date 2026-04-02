@@ -15,8 +15,8 @@ except:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # 🔥 Fail fast if missing
-if not GROQ_API_KEY:
-    raise ValueError("GROQ_API_KEY not found")
+st.write("GROQ KEY EXISTS:", "GROQ_API_KEY" in st.secrets)
+st.write("KEY VALUE:", st.secrets.get("GROQ_API_KEY"))
 
 # -----------------------------
 # Client

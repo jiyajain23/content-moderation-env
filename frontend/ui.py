@@ -22,14 +22,22 @@ client = OpenAI(
 
 st.set_page_config(page_title="AI Moderation Agent", layout="wide", initial_sidebar_state="expanded")
 
-# Custom CSS for better styling
+# Custom CSS that respects your Theme (Dark or Light)
 st.markdown("""
     <style>
-    .main { background-color: #f5f7f9; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    .status-box { padding: 20px; border-radius: 10px; margin-bottom: 20px; }
+    /* Metric boxes: semi-transparent so they look good in both themes */
+    [data-testid="stMetric"] {
+        background-color: rgba(255, 255, 255, 0.05); 
+        padding: 15px; 
+        border-radius: 10px; 
+        border: 1px solid rgba(128, 128, 128, 0.2);
+    }
+    /* Fix for the white text visibility */
+    .stMarkdown, .stCaption, h1, h2, h3, h4 {
+        color: inherit !important;
+    }
     </style>
-    """, unsafe_allow_html=True) # Changed from unsafe_content_allowed
+    """, unsafe_allow_html=True)
 
 st.title("🛡️ AI Content Moderation Simulator")
 st.caption("Context-Aware RL Environment powered by Groq & OpenEnv")

@@ -1,37 +1,27 @@
 import os
-from openai import OpenAI
+import json
 import requests
-# -----------------------------
-# Config (robust)
-# -----------------------------
-try:
-    # -----------------------------
-# Config (FIXED)
-# -----------------------------
-    import streamlit as st
+from openai import OpenAI
 
-    if "API_BASE_URL" in st.secrets:
-        API_BASE = st.secrets["API_BASE_URL"]
-    else:
-        API_BASE = "http://localhost:7860"
-        MODEL_NAME = st.secrets.get("MODEL_NAME", "llama3-70b-8192")
-        GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
-except:
-    API_BASE = os.getenv("API_BASE_URL")
-    MODEL_NAME = os.getenv("MODEL_NAME", "llama3-70b-8192")
-    GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-st.sidebar.write("🔗 API_BASE:", API_BASE)
-# 🔥 Fail fast if missing
-st.write("GROQ KEY EXISTS:", "GROQ_API_KEY" in st.secrets)
-st.write("KEY VALUE:", st.secrets.get("GROQ_API_KEY"))
+# -----------------------------
+# Config (Submission-compliant)
+# -----------------------------
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:7860")
+MODEL_NAME = os.getenv("MODEL_NAME", "llama3-70b-8192")
+HF_TOKEN = os.getenv("HF_TOKEN")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
 # -----------------------------
 # Client
 # -----------------------------
 client = OpenAI(
-    api_key=GROQ_API_KEY,
+    api_key=HF_TOKEN,
     base_url="https://api.groq.com/openai/v1"
 )
+
+# -----------------------------
+# LLM Action
+# -----------------------------
 def get_action(obs):
     prompt = f"""
 You are a content moderation agent.
@@ -65,33 +55,38 @@ Return STRICT JSON:
         temperature=0
     )
 
-    import json
     return json.loads(response.choices[0].message.content)
+
+# -----------------------------
+# Helpers
+# -----------------------------
 def normalize_label(label):
     label = label.lower()
-
     if "spam" in label:
         return "spam"
     elif "hate" in label or "abuse" in label or "threat" in label:
         return "abusive"
-    else:
-        return "safe"
+    return "safe"
 
+# -----------------------------
+# Main Task Runner
+# -----------------------------
 def run_task(task_id):
-    res = requests.post(f"{API_BASE}/reset", json={"task_id": task_id})
+    print(f"[START] Task={task_id}")
+
+    res = requests.post(f"{API_BASE_URL}/reset", json={"task_id": task_id})
     obs = res.json()["observation"]
 
     total_reward = 0
 
-    for _ in range(10):
-        available = obs.get("available_actions", obs.get("available", [])) or []
-        if not isinstance(available, list):
-            available = []
+    for step in range(10):
+        available = obs.get("available_actions", []) or []
         if not available:
-            print("❌ No available actions in observation:", obs)
+            print(f"[STEP] No available actions → stopping")
             break
 
         action = get_action(obs)
+
         action_type = (action.get("action_type") or "").lower()
         if "classify" in action_type:
             action["action_type"] = "classify"
@@ -110,26 +105,29 @@ def run_task(task_id):
             action["label"] = None
             action["decision"] = (action.get("decision") or "allow").lower()
 
-        res = requests.post(f"{API_BASE}/step", json={"action": action})
+        res = requests.post(f"{API_BASE_URL}/step", json={"action": action})
         data = res.json()
-        print("STEP RESPONSE:", data)
+
+        print(f"[STEP] step={step} action={action} reward={data.get('reward')}")
+
         if "observation" not in data:
-            print("❌ Step failed:", data)
+            print(f"[STEP] Error response: {data}")
             break
+
         total_reward += data["reward"]
         obs = data["observation"]
 
-        if data["done"]:
+        if data.get("done"):
             break
-        
+
+    print(f"[END] Task={task_id} TotalReward={total_reward}")
     return total_reward
 
-
+# -----------------------------
+# Entry
+# -----------------------------
 if __name__ == "__main__":
     tasks = ["task_easy_001", "task_medium_001", "task_hard_001"]
 
     for t in tasks:
-        score = run_task(t)
-        print(f"{t}: {score}")
-
-
+        run_task(t)

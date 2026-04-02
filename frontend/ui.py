@@ -179,8 +179,8 @@ if st.session_state.observation:
                        with st.chat_message("assistant", avatar="🧠"):
                            st.write("**My Reasoning:**")
                            st.info(action.get("reasoning", "The AI didn't provide specific reasoning."))
-                        res = requests.post(f"{API_BASE}/step", json={"action": action})
-                        data = res.json()
+                       res = requests.post(f"{API_BASE}/step", json={"action": action})
+                       data = res.json()
             # ... rest of your session state logic ...
 
         # MANUAL OVERRIDE BOX

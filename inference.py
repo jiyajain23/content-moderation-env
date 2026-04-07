@@ -18,14 +18,14 @@ MAX_STEPS = 10
 
 
 def create_client():
-    api_base = os.getenv("API_BASE_URL")
+    base_url = os.getenv("API_BASE_URL")
     api_key = os.getenv("API_KEY")  # 👈 MUST use this
 
     try:
-        if api_base and api_key:
+        if base_url and api_key:
             return OpenAI(
                 api_key=api_key,
-                base_url=api_base
+                base_url=base_url
             )
 
         # ⚠️ Local fallback (optional)

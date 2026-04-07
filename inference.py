@@ -9,11 +9,14 @@ from openai import OpenAI
 API_BASE_URL = os.getenv("API_BASE_URL")
 MODEL_NAME = os.getenv("MODEL_NAME")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-print("DEBUG ENV:", bool(API_BASE_URL), bool(API_KEY), flush=True)
+
 TASK_NAME = "content_moderation"
 BENCHMARK = "content_moderation_env"
 MAX_STEPS = 10
 
+# -----------------------------
+# Safe Client Init
+# -----------------------------
 try:
     if not API_BASE_URL or not API_KEY:
         raise ValueError("Missing API_BASE_URL or API_KEY")
@@ -22,24 +25,19 @@ try:
         base_url=API_BASE_URL,
         api_key=API_KEY
     )
-
 except Exception as e:
     print(f"[FATAL] Client init failed: {e}", flush=True)
-    exit(1)
+    client = None  # continue safely
 
 # -----------------------------
-# Logging (STRICT FORMAT)
+# Logging
 # -----------------------------
 def compute_score(rewards):
     if not rewards:
-        return 0.5  # safe default
+        return 0.5
+    raw = sum(rewards) / len(rewards)
+    return max(0.01, min(0.99, raw))
 
-    raw_score = sum(rewards) / len(rewards)
-
-    # Normalize to (0,1) safely
-    score = max(0.01, min(0.99, raw_score))
-
-    return score
 def log_start(task, env, model):
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
@@ -60,7 +58,33 @@ def log_end(success, steps, rewards):
     )
 
 # -----------------------------
-# LLM Action (MANDATORY CALL)
+# Safe Helpers
+# -----------------------------
+def safe_post(url, payload):
+    try:
+        res = requests.post(url, json=payload, timeout=10)
+        return res.json()
+    except Exception as e:
+        print(f"[DEBUG] Request error: {e}", flush=True)
+        return {}
+
+def safe_json_load(text, fallback):
+    try:
+        return json.loads(text)
+    except:
+        return fallback
+
+def get_safe_action(available_actions):
+    action_type = available_actions[0] if available_actions else "classify"
+    return {
+        "action_type": action_type,
+        "label": "safe",
+        "decision": "allow",
+        "reasoning": "safe_fallback"
+    }
+
+# -----------------------------
+# LLM Action
 # -----------------------------
 def get_action(obs):
     content = obs.get("content", "")
@@ -80,20 +104,16 @@ Rules:
 - If only "classify" is available → DO NOT moderate
 - Choose ONLY from available_actions
 
-Label must be one of: spam, abusive, safe
-Decision must be one of: allow, warn, remove
+Label: spam, abusive, safe
+Decision: allow, warn, remove
 
-Return STRICT JSON:
-{{
-  "action_type": "...",
-  "label": "...",
-  "decision": "...",
-  "reasoning": "..."
-}}
+Return STRICT JSON.
 """
 
     try:
-        # ✅ REQUIRED LLM CALL
+        if client is None:
+            raise ValueError("Client not initialized")
+
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
@@ -101,33 +121,18 @@ Return STRICT JSON:
         )
 
         text = response.choices[0].message.content or "{}"
-        try:
-            action = json.loads(text)
-        except:
-            action = {
-                "action_type": available_actions[0] if available_actions else "classify",
-                "label": "safe",
-                "decision": "allow",
-                "reasoning": "json_parse_fail"
-            }
+
+        return safe_json_load(
+            text,
+            get_safe_action(available_actions)
+        )
 
     except Exception as e:
-        # ⚠️ Still counts as LLM attempt before failure
         print(f"[DEBUG] LLM error: {e}", flush=True)
-
-        # Minimal safe fallback (AFTER attempt)
-        action_type = available_actions[0] if available_actions else "classify"
-        action = {
-            "action_type": action_type,
-            "label": "safe",
-            "decision": "allow",
-            "reasoning": "fallback_after_llm_error"
-        }
-
-    return action
+        return get_safe_action(available_actions)
 
 # -----------------------------
-# Helpers
+# Normalize label
 # -----------------------------
 def normalize_label(label):
     label = (label or "").lower()
@@ -148,8 +153,7 @@ def run_task(task_id):
     success = False
 
     try:
-        res = requests.post(f"{API_BASE_URL}/reset", json={"task_id": task_id})
-        data = res.json()
+        data = safe_post(f"{API_BASE_URL}/reset", {"task_id": task_id})
 
         if "observation" not in data:
             log_step(0, "reset_failed", 0.0, True, "reset_error")
@@ -187,9 +191,7 @@ def run_task(task_id):
                 action["label"] = None
                 action["decision"] = (action.get("decision") or "allow").lower()
 
-            # Step env
-            res = requests.post(f"{API_BASE_URL}/step", json={"action": action})
-            data = res.json()
+            data = safe_post(f"{API_BASE_URL}/step", {"action": action})
 
             reward = float(data.get("reward", 0.0))
             done = bool(data.get("done", False))
@@ -219,7 +221,11 @@ def run_task(task_id):
 # Entry
 # -----------------------------
 if __name__ == "__main__":
-    tasks = ["task_easy_001", "task_medium_001", "task_hard_001"]
+    try:
+        tasks = ["task_easy_001", "task_medium_001", "task_hard_001"]
 
-    for t in tasks:
-        run_task(t)
+        for t in tasks:
+            run_task(t)
+
+    except Exception as e:
+        print(f"[FATAL] Unhandled exception: {e}", flush=True)

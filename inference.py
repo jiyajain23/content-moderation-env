@@ -9,6 +9,7 @@ from openai import OpenAI
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:7860")
 MODEL_NAME = os.getenv("MODEL_NAME", "llama3-70b-8192")
 HF_TOKEN = os.getenv("HF_TOKEN")
+API_KEY = os.getenv("API_KEY") 
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
 TASK_NAME = "content_moderation"

@@ -17,17 +17,27 @@ MAX_STEPS = 10
 
 
 def create_client():
-    if not HF_TOKEN:
-        print("[DEBUG] Missing HF_TOKEN, running in fallback mode", flush=True)
-        return None
+    api_base = os.getenv("API_BASE_URL")
+    api_key = os.getenv("API_KEY")  # 👈 MUST use this
 
     try:
-        return OpenAI(
-            api_key=HF_TOKEN,
-            base_url="https://api.groq.com/openai/v1"
-        )
-    except Exception as e:
-        print(f"[DEBUG] Client init failed: {e}", flush=True)
+        if api_base and api_key:
+            return OpenAI(
+                api_key=api_key,
+                base_url=api_base
+            )
+
+        # ⚠️ Local fallback (optional)
+        hf_token = os.getenv("HF_TOKEN")
+        if hf_token:
+            return OpenAI(
+                api_key=hf_token,
+                base_url="https://api.groq.com/openai/v1"
+            )
+
+        return None
+
+    except Exception:
         return None
 
 

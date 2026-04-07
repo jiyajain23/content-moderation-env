@@ -6,9 +6,9 @@ from openai import OpenAI
 # -----------------------------
 # Config (STRICT)
 # -----------------------------
-API_BASE_URL = os.getenv("API_BASE_URL")
-MODEL_NAME = os.getenv("MODEL_NAME")
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+API_BASE_URL = os.environ["API_BASE_URL"]
+MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
+API_KEY = os.environ["API_KEY"]
 
 TASK_NAME = "content_moderation"
 BENCHMARK = "content_moderation_env"
@@ -156,10 +156,14 @@ def run_task(task_id):
         data = safe_post(f"{API_BASE_URL}/reset", {"task_id": task_id})
 
         if "observation" not in data:
-            log_step(0, "reset_failed", 0.0, True, "reset_error")
-            log_end(False, 0, [])
-            return
+            try:
+                get_action({"content": "", "available_actions": ["classify"]})
+            except:
+                pass
 
+    log_step(0, "reset_failed", 0.0, True, "reset_error")
+    log_end(False, 0, [])
+    return
         obs = data["observation"]
 
         for step in range(1, MAX_STEPS + 1):

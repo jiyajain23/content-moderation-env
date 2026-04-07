@@ -8,10 +8,13 @@ Implements the OpenEnv contract:
 """
 
 from typing import Optional, Tuple, Dict, Any
-
+ 
 from .models import Action, Observation, State
 from .tasks import get_task, TASKS, get_all_task_ids
-from .graders import grade_step, grade_classification, grade_decision, compute_episode_reward
+from .graders import (
+    grade_step, grade_classification, grade_decision,
+    compute_episode_reward, SCORE_MIN, SCORE_MAX,
+)
 
 MAX_STEPS = 10  # Safety cap to prevent infinite loops
 

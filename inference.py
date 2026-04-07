@@ -15,13 +15,23 @@ TASK_NAME = "content_moderation"
 BENCHMARK = "content_moderation_env"
 MAX_STEPS = 10
 
-# -----------------------------
-# Client
-# -----------------------------
-client = OpenAI(
-    api_key=HF_TOKEN,
-    base_url="https://api.groq.com/openai/v1"
-)
+
+def create_client():
+    if not HF_TOKEN:
+        print("[DEBUG] Missing HF_TOKEN, running in fallback mode", flush=True)
+        return None
+
+    try:
+        return OpenAI(
+            api_key=HF_TOKEN,
+            base_url="https://api.groq.com/openai/v1"
+        )
+    except Exception as e:
+        print(f"[DEBUG] Client init failed: {e}", flush=True)
+        return None
+
+
+client = create_client()
 
 # -----------------------------
 # Logging (STRICT FORMAT)
@@ -46,15 +56,29 @@ def log_end(success, steps, rewards):
 # -----------------------------
 # LLM Action
 # -----------------------------
+
 def get_action(obs):
+    content = obs.get("content", "")
+    available_actions = obs.get("available_actions", []) or []
+
+    # Fallback if no client (HF_TOKEN missing / init failed)
+    if client is None:
+        action_type = available_actions[0] if available_actions else "classify"
+        return {
+            "action_type": action_type,
+            "label": "safe" if action_type == "classify" else None,
+            "decision": "allow" if action_type == "moderate" else None,
+            "reasoning": "fallback_no_client"
+        }
+
     prompt = f"""
 You are a content moderation agent.
 
 Post:
-{obs['content']}
+{content}
 
 Available actions:
-{obs['available_actions']}
+{available_actions}
 
 Rules:
 - If only "moderate" is available → you MUST NOT classify
@@ -79,15 +103,18 @@ Return STRICT JSON:
             messages=[{"role": "user", "content": prompt}],
             temperature=0
         )
-        return json.loads(response.choices[0].message.content)
-    except Exception:
-        return {
-            "action_type": "classify",
-            "label": "safe",
-            "decision": None,
-            "reasoning": "fallback"
-        }
 
+        content = response.choices[0].message.content or "{}"
+        return json.loads(content)
+
+    except Exception:
+        action_type = available_actions[0] if available_actions else "classify"
+        return {
+            "action_type": action_type,
+            "label": "safe" if action_type == "classify" else None,
+            "decision": "allow" if action_type == "moderate" else None,
+            "reasoning": "fallback_exception"
+        }
 # -----------------------------
 # Helpers
 # -----------------------------

@@ -161,9 +161,9 @@ def run_task(task_id):
             except:
                 pass
 
-    log_step(0, "reset_failed", 0.0, True, "reset_error")
-    log_end(False, 0, [])
-    return
+        log_step(0, "reset_failed", 0.0, True, "reset_error")
+        log_end(False, 0, [])
+        return
         obs = data["observation"]
 
         for step in range(1, MAX_STEPS + 1):

@@ -9,16 +9,23 @@ from openai import OpenAI
 API_BASE_URL = os.getenv("API_BASE_URL")
 MODEL_NAME = os.getenv("MODEL_NAME")
 API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
-
+print("DEBUG ENV:", bool(API_BASE_URL), bool(API_KEY), flush=True)
 TASK_NAME = "content_moderation"
 BENCHMARK = "content_moderation_env"
 MAX_STEPS = 10
 
-# ✅ Strict client (NO fallback)
-client = OpenAI(
-    base_url=API_BASE_URL,
-    api_key=API_KEY
-)
+try:
+    if not API_BASE_URL or not API_KEY:
+        raise ValueError("Missing API_BASE_URL or API_KEY")
+
+    client = OpenAI(
+        base_url=API_BASE_URL,
+        api_key=API_KEY
+    )
+
+except Exception as e:
+    print(f"[FATAL] Client init failed: {e}", flush=True)
+    exit(1)
 
 # -----------------------------
 # Logging (STRICT FORMAT)
@@ -94,7 +101,15 @@ Return STRICT JSON:
         )
 
         text = response.choices[0].message.content or "{}"
-        action = json.loads(text)
+        try:
+            action = json.loads(text)
+        except:
+            action = {
+                "action_type": available_actions[0] if available_actions else "classify",
+                "label": "safe",
+                "decision": "allow",
+                "reasoning": "json_parse_fail"
+            }
 
     except Exception as e:
         # ⚠️ Still counts as LLM attempt before failure

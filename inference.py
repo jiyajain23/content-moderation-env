@@ -9,7 +9,7 @@ from openai import OpenAI
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:7860")
 MODEL_NAME = os.getenv("MODEL_NAME", "llama3-70b-8192")
 HF_TOKEN = os.getenv("HF_TOKEN")
-API_KEY = os.getenv("API_KEY")
+API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
 TASK_NAME = "content_moderation"
@@ -22,7 +22,7 @@ def create_client():
     Returns None instead of crashing when credentials are missing.
     """
     base_url = os.getenv("API_BASE_URL")
-    api_key = os.getenv("API_KEY")
+    api_key = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 
     try:
         # Primary path: platform-provided API_BASE_URL + API_KEY
@@ -63,10 +63,10 @@ def log_step(step, action, reward, done, error):
         flush=True
     )
 
-def log_end(success, steps, rewards):
+def log_end(success, steps, score, rewards):
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
-        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
+        f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}",
         flush=True
     )
 
@@ -183,6 +183,7 @@ def run_task(task_id):
 
     rewards = []
     steps_taken = 0
+    score = 0.0
     success = False
 
     try:
@@ -191,7 +192,7 @@ def run_task(task_id):
 
         if "observation" not in data:
             log_step(0, "reset_failed", 0.0, True, "reset_error")
-            log_end(False, 0, [])
+            log_end(False, 0, 0.0, [])
             return
 
         obs = data["observation"]
@@ -247,11 +248,17 @@ def run_task(task_id):
                 success = True
                 break
 
+        # Compute normalized score in [0, 1]
+        # reward range per openenv.yaml: [-1.0, 1.1]
+        max_possible = 1.1 * len(rewards) if rewards else 1.0
+        score = max(0.0, min(1.0, sum(rewards) / max_possible)) if rewards else 0.0
+        success = score > 0.0
+
     except Exception as e:
         log_step(steps_taken + 1, "exception", 0.0, True, str(e))
 
     finally:
-        log_end(success, steps_taken, rewards)
+        log_end(success, steps_taken, score, rewards)
 
 # -----------------------------
 # Entry

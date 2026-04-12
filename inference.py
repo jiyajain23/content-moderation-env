@@ -40,17 +40,18 @@ MAX_STEPS = 10
 TASK_IDS  = ["task_easy_001", "task_medium_001", "task_hard_001"]
 
 # ---------------------------------------------------------------------------
-# OpenAI client — points ONLY at the LiteLLM proxy, fails loudly if misconfigured
+# OpenAI client — reads env vars at call time so validator-injected values are seen
 # ---------------------------------------------------------------------------
 def create_client() -> OpenAI:
-    missing = [k for k, v in [("API_BASE_URL", API_BASE_URL), ("API_KEY", API_KEY)] if not v]
-    if missing:
-        raise EnvironmentError(
-            f"Required environment variable(s) not set: {', '.join(missing)}\n"
-            "API_BASE_URL must point to the LiteLLM proxy, not the env server."
-        )
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-    log.info("LLM client ready  → base_url=%s  model=%s", API_BASE_URL, MODEL_NAME)
+    base_url = os.getenv("API_BASE_URL", "").rstrip("/")
+    api_key  = os.getenv("API_KEY", "")
+    # Provide a dummy key if missing so OpenAI() doesn't throw at construction —
+    # a real auth error will surface naturally on the first LLM call instead.
+    client = OpenAI(
+        base_url=base_url or None,
+        api_key=api_key or "dummy",
+    )
+    log.info("LLM client ready  → base_url=%s  model=%s", base_url or "(default)", MODEL_NAME)
     log.info("Env server        → %s", ENV_BASE_URL)
     return client
 

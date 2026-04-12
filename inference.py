@@ -4,13 +4,12 @@ import requests
 from openai import OpenAI
 
 # -----------------------------
-# Config (Submission-compliant)
+# Config
 # -----------------------------
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:7860")
-MODEL_NAME = os.getenv("MODEL_NAME", "llama3-70b-8192")
-HF_TOKEN = os.getenv("HF_TOKEN")
-API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")  # Validator's API_KEY takes priority
-LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:7860")  # default provided
+MODEL_NAME = os.getenv("MODEL_NAME", "llama3-70b-8192")           # default provided
+HF_TOKEN = os.getenv("HF_TOKEN")                                  # no default — injected by platform
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")                   # optional
 
 TASK_NAME = "content_moderation"
 BENCHMARK = "content_moderation_env"
@@ -18,20 +17,17 @@ MAX_STEPS = 10
 
 
 def create_client():
-    """Create an OpenAI-compatible client using the validator-injected env vars.
-    Returns None instead of crashing when credentials are missing.
+    """Create an OpenAI client using platform-injected env vars.
+    Uses HF_TOKEN as the API key and API_BASE_URL as base URL.
+    Returns None if HF_TOKEN is not set.
     """
-    # MUST use the validator's API_BASE_URL and API_KEY — never bypass
-    base_url = os.getenv("API_BASE_URL")
-    api_key = os.getenv("API_KEY") or os.getenv("HF_TOKEN")  # API_KEY first
-
-    if not api_key:
+    if not HF_TOKEN:
         return None
 
     try:
         return OpenAI(
-            api_key=api_key,
-            base_url=base_url if base_url else "http://localhost:7860",
+            api_key=HF_TOKEN,
+            base_url=API_BASE_URL,
         )
     except Exception:
         return None
@@ -242,10 +238,11 @@ def run_task(task_id):
                 break
 
         # Compute normalized score in [0, 1]
-        # reward range per openenv.yaml: [-1.0, 1.1]
-        max_possible = 1.1 * len(rewards) if rewards else 1.0
-        score = max(0.0, min(1.0, sum(rewards) / max_possible)) if rewards else 0.0
-        success = score > 0.0
+        # reward range per openenv.yaml: [-1.0, 1.1]; success driven by env done signal
+        if rewards:
+            max_possible = 1.1 * len(rewards)
+            score = max(0.0, min(1.0, sum(rewards) / max_possible))
+        # success already set to True if env returned done=True
 
     except Exception as e:
         log_step(steps_taken + 1, "exception", 0.0, True, str(e))

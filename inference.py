@@ -1,205 +1,211 @@
-"""
-Content Moderation Agent — inference.py
-----------------------------------------
-Environment variables (all required):
-    API_BASE_URL   LiteLLM proxy base URL  e.g. https://proxy.example.com/v1
-    API_KEY        LiteLLM proxy API key
-    ENV_BASE_URL   Moderation env server   e.g. http://localhost:7860
-    MODEL_NAME     Model alias on proxy    default: llama3-70b-8192
-"""
-
-import json
-import logging
 import os
-import sys
-
+import json
 import requests
 from openai import OpenAI
 
-# ---------------------------------------------------------------------------
-# Logging
-# ---------------------------------------------------------------------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    stream=sys.stdout,
-    force=True,
-)
-log = logging.getLogger(__name__)
+# -----------------------------
+# Config (Submission-compliant)
+# -----------------------------
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:7860")
+MODEL_NAME = os.getenv("MODEL_NAME", "llama3-70b-8192")
+HF_TOKEN = os.getenv("HF_TOKEN")
+API_KEY = os.getenv("API_KEY")
+LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
-API_BASE_URL = os.getenv("API_BASE_URL", "").rstrip("/")   # LiteLLM proxy → LLM calls ONLY
-API_KEY      = os.getenv("API_KEY", "")                    # LiteLLM proxy key
-ENV_BASE_URL = os.getenv("ENV_BASE_URL", "http://localhost:7860").rstrip("/")  # FastAPI env server
-MODEL_NAME   = os.getenv("MODEL_NAME", "llama3-70b-8192")
-
+TASK_NAME = "content_moderation"
 BENCHMARK = "content_moderation_env"
 MAX_STEPS = 10
-TASK_IDS  = ["task_easy_001", "task_medium_001", "task_hard_001"]
 
-# ---------------------------------------------------------------------------
-# OpenAI client — reads env vars at call time so validator-injected values are seen
-# ---------------------------------------------------------------------------
-def create_client() -> OpenAI:
-    base_url = os.getenv("API_BASE_URL", "").rstrip("/")
-    api_key  = os.getenv("API_KEY", "")
-    # Provide a dummy key if missing so OpenAI() doesn't throw at construction —
-    # a real auth error will surface naturally on the first LLM call instead.
-    client = OpenAI(
-        base_url=base_url or None,
-        api_key=api_key or "dummy",
-    )
-    log.info("LLM client ready  → base_url=%s  model=%s", base_url or "(default)", MODEL_NAME)
-    log.info("Env server        → %s", ENV_BASE_URL)
-    return client
 
-# ---------------------------------------------------------------------------
-# Structured logging (format kept compatible with validator expectations)
-# ---------------------------------------------------------------------------
-def log_start(task: str, env: str, model: str) -> None:
-    log.info("[START] task=%s env=%s model=%s", task, env, model)
+def create_client():
+    """Create an OpenAI-compatible client.
+    Returns None instead of crashing when credentials are missing.
+    """
+    base_url = os.getenv("API_BASE_URL")
+    api_key = os.getenv("API_KEY")
 
-def log_step(step: int, action: str, reward: float, done: bool, error) -> None:
-    log.info(
-        "[STEP] step=%d action=%s reward=%.2f done=%s error=%s",
-        step, action, reward, str(done).lower(), error if error else "null",
-    )
-
-def log_end(success: bool, steps: int, rewards: list) -> None:
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    score = max(0.01, min(0.99, sum(rewards) / len(rewards))) if rewards else 0.5
-    log.info(
-        "[END] success=%s steps=%d score=%.3f rewards=%s",
-        str(success).lower(), steps, score, rewards_str,
-    )
-
-# ---------------------------------------------------------------------------
-# HTTP helpers — all env server calls go through here
-# ---------------------------------------------------------------------------
-def env_post(endpoint: str, payload: dict) -> dict:
-    """POST to the moderation environment server (ENV_BASE_URL). Raises on failure."""
-    url = f"{ENV_BASE_URL}{endpoint}"
     try:
-        resp = requests.post(url, json=payload, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
-    except requests.RequestException as exc:
-        raise RuntimeError(f"POST {url} failed: {exc}") from exc
+        # Primary path: platform-provided API_BASE_URL + API_KEY
+        if base_url and api_key:
+            return OpenAI(api_key=api_key, base_url=base_url)
 
-# ---------------------------------------------------------------------------
-# Normalisation helpers
-# ---------------------------------------------------------------------------
-def normalize_label(label: str | None) -> str:
+        # Fallback: local Groq via HF_TOKEN
+        hf_token = os.getenv("HF_TOKEN")
+        if hf_token:
+            return OpenAI(
+                api_key=hf_token,
+                base_url="https://api.groq.com/openai/v1",
+            )
+
+        # No credentials at all → return None (fallback mode)
+        return None
+
+    except Exception:
+        return None
+
+
+# Safe top-level init — never crashes
+try:
+    client = create_client()
+except Exception:
+    client = None
+
+# -----------------------------
+# Logging (STRICT FORMAT)
+# -----------------------------
+def log_start(task, env, model):
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+def log_step(step, action, reward, done, error):
+    error_val = error if error else "null"
+    print(
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={str(done).lower()} error={error_val}",
+        flush=True
+    )
+
+def log_end(success, steps, rewards):
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    print(
+        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
+        flush=True
+    )
+
+# -----------------------------
+# LLM Action
+# -----------------------------
+
+def get_action(obs):
+    content = obs.get("content", "")
+    available_actions = obs.get("available_actions", []) or []
+
+    # Fallback if no client (credentials missing / init failed)
+    if client is None:
+        return _fallback_action(content, available_actions, "fallback_no_client")
+
+    prompt = f"""
+You are a content moderation agent.
+
+Post:
+{content}
+
+Available actions:
+{available_actions}
+
+Rules:
+- If only "moderate" is available → you MUST NOT classify
+- If only "classify" is available → you MUST NOT moderate
+- Choose ONLY from available_actions
+
+Label must be one of: "spam", "abusive", "safe"
+Decision must be one of: "allow", "warn", "remove"
+
+Return STRICT JSON:
+{{
+  "action_type": "...",
+  "label": "...",
+  "decision": "...",
+  "reasoning": "..."
+}}
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+        )
+
+        raw = response.choices[0].message.content or "{}"
+        # Strip markdown fences if present
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1]
+            if raw.endswith("```"):
+                raw = raw[:-3]
+            raw = raw.strip()
+        return json.loads(raw)
+
+    except Exception:
+        return _fallback_action(content, available_actions, "fallback_exception")
+
+
+def _fallback_action(content, available_actions, reason):
+    """Heuristic fallback when no LLM is available."""
+    action_type = available_actions[0] if available_actions else "classify"
+
+    # Simple keyword-based heuristic
+    text = (content or "").lower()
+
+    if action_type == "classify":
+        if any(w in text for w in ["buy now", "click here", "free", "subscribe", "promo", "offer", "discount"]):
+            label = "spam"
+        elif any(w in text for w in ["hate", "kill", "threat", "idiot", "stupid", "die", "abuse"]):
+            label = "abusive"
+        else:
+            label = "safe"
+        return {
+            "action_type": "classify",
+            "label": label,
+            "decision": None,
+            "reasoning": reason,
+        }
+    else:
+        # moderate step
+        if any(w in text for w in ["kill", "threat", "die", "hate"]):
+            decision = "remove"
+        elif any(w in text for w in ["idiot", "stupid", "abuse", "spam"]):
+            decision = "warn"
+        else:
+            decision = "allow"
+        return {
+            "action_type": "moderate",
+            "label": None,
+            "decision": decision,
+            "reasoning": reason,
+        }
+
+# -----------------------------
+# Helpers
+# -----------------------------
+def normalize_label(label):
     label = (label or "").lower()
     if "spam" in label:
         return "spam"
-    if any(w in label for w in ("hate", "abuse", "abusive", "threat")):
+    elif "hate" in label or "abuse" in label or "threat" in label:
         return "abusive"
     return "safe"
 
-def normalize_decision(decision: str | None) -> str:
-    decision = (decision or "allow").lower()
-    if "remove" in decision:
-        return "remove"
-    if "warn" in decision:
-        return "warn"
-    return "allow"
-
-def fallback_action(available_actions: list, reasoning: str = "fallback") -> dict:
-    action_type = available_actions[0] if available_actions else "classify"
-    return {
-        "action_type": action_type,
-        "label":       "safe"  if action_type == "classify" else None,
-        "decision":    "allow" if action_type == "moderate" else None,
-        "reasoning":   reasoning,
-    }
-
-def safe_json_load(text: str, fallback: dict) -> dict:
-    try:
-        text = text.strip()
-        if text.startswith("```"):
-            parts = text.split("```")
-            text = parts[1].lstrip("json").strip() if len(parts) > 1 else text
-        return json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        return fallback
-
-# ---------------------------------------------------------------------------
-# LLM action — raises on failure so the caller can decide what to do
-# ---------------------------------------------------------------------------
-def get_action(obs: dict, client: OpenAI) -> dict:
-    available_actions = obs.get("available_actions") or []
-    content           = obs.get("content", "")
-    user_history      = obs.get("user_history") or []
-    flags             = obs.get("flags") or []
-    platform_rules    = obs.get("platform_rules") or []
-
-    is_classify = "classify" in available_actions
-
-    if is_classify:
-        task_instruction = (
-            "Your task: CLASSIFY this post.\n"
-            'Return JSON: {"action_type": "classify", "label": "<spam|abusive|safe>", "reasoning": "<brief>"}'
-        )
-    else:
-        task_instruction = (
-            "Your task: MODERATE this post (already classified).\n"
-            'Return JSON: {"action_type": "moderate", "decision": "<allow|warn|remove>", "reasoning": "<brief>"}'
-        )
-
-    history_lines = "\n".join(f"- {h}" for h in user_history) if user_history else "- No prior history"
-    flag_lines    = "\n".join(f"- {f}" for f in flags)         if flags          else "- No flags"
-    rule_lines    = "\n".join(f"- {r}" for r in platform_rules) if platform_rules else "- No rules provided"
-
-    prompt = (
-        "You are an expert content moderation agent for a social media platform.\n\n"
-        f"POST CONTENT:\n{content}\n\n"
-        f"USER HISTORY:\n{history_lines}\n\n"
-        f"COMMUNITY FLAGS:\n{flag_lines}\n\n"
-        f"PLATFORM RULES:\n{rule_lines}\n\n"
-        f"AVAILABLE ACTIONS: {available_actions}\n\n"
-        f"{task_instruction}\n\n"
-        "Return ONLY valid JSON. No markdown, no extra text."
-    )
-
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0,
-    )
-    text = response.choices[0].message.content or "{}"
-    return safe_json_load(text, fallback_action(available_actions, "json_parse_fallback"))
-
-# ---------------------------------------------------------------------------
-# Episode runner
-# ---------------------------------------------------------------------------
-def run_task(task_id: str, client: OpenAI) -> None:
+# -----------------------------
+# Main Task Runner
+# -----------------------------
+def run_task(task_id):
     log_start(task_id, BENCHMARK, MODEL_NAME)
 
-    rewards:     list  = []
-    steps_taken: int   = 0
-    success:     bool  = False
+    rewards = []
+    steps_taken = 0
+    success = False
 
     try:
-        # ── Reset ──────────────────────────────────────────────────────────
-        data = env_post("/reset", {"task_id": task_id})
+        res = requests.post(f"{API_BASE_URL}/reset", json={"task_id": task_id})
+        data = res.json()
+
         if "observation" not in data:
-            raise RuntimeError(f"Reset returned no observation: {data}")
+            log_step(0, "reset_failed", 0.0, True, "reset_error")
+            log_end(False, 0, [])
+            return
+
         obs = data["observation"]
 
-        # ── Episode loop ───────────────────────────────────────────────────
         for step in range(1, MAX_STEPS + 1):
-            available = obs.get("available_actions") or []
+            available = obs.get("available_actions", []) or []
+
             if not available:
-                log_step(step, "no_actions", 0.0, True, "no_available_actions")
+                log_step(step, "no_available_actions", 0.0, True, "no_actions")
                 break
 
-            # LLM call — raises on any API error
-            action = get_action(obs, client)
+            action = get_action(obs)
 
-            # Normalise action_type
+            # Normalize action_type
             action_type = (action.get("action_type") or "").lower()
             if "classify" in action_type:
                 action["action_type"] = "classify"
@@ -211,44 +217,47 @@ def run_task(task_id: str, client: OpenAI) -> None:
             if action["action_type"] not in available:
                 action["action_type"] = available[0]
 
-            # Normalise label / decision
+            # Fix fields
             if action["action_type"] == "classify":
-                action["label"]    = normalize_label(action.get("label"))
+                action["label"] = normalize_label(action.get("label"))
                 action["decision"] = None
             else:
-                action["label"]    = None
-                action["decision"] = normalize_decision(action.get("decision"))
+                action["label"] = None
+                action["decision"] = (action.get("decision") or "allow").lower()
 
-            # ── Step ───────────────────────────────────────────────────────
-            step_data = env_post("/step", {"action": action})
-            reward    = float(step_data.get("reward", 0.0))
-            done      = bool(step_data.get("done", False))
-            error     = None if "observation" in step_data else "step_error"
+            # Step API
+            res = requests.post(f"{API_BASE_URL}/step", json={"action": action})
+            data = res.json()
+
+            reward = float(data.get("reward", 0.0))
+            done = bool(data.get("done", False))
+            error = None if "observation" in data else "step_error"
 
             rewards.append(reward)
             steps_taken = step
+
             log_step(step, json.dumps(action), reward, done, error)
 
-            if "observation" not in step_data:
+            if "observation" not in data:
                 break
 
-            obs = step_data["observation"]
+            obs = data["observation"]
 
             if done:
                 success = True
                 break
 
-    except Exception as exc:
-        log.error("[ERROR] task=%s  %s", task_id, exc, exc_info=True)
-        log_step(steps_taken + 1, "exception", 0.0, True, str(exc))
+    except Exception as e:
+        log_step(steps_taken + 1, "exception", 0.0, True, str(e))
 
     finally:
         log_end(success, steps_taken, rewards)
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
+# -----------------------------
+# Entry
+# -----------------------------
 if __name__ == "__main__":
-    llm_client = create_client()  # hard-fails if env vars are missing or wrong
-    for task_id in TASK_IDS:
-        run_task(task_id, llm_client)
+    tasks = ["task_easy_001", "task_medium_001", "task_hard_001"]
+
+    for t in tasks:
+        run_task(t)

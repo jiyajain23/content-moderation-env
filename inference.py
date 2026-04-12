@@ -8,6 +8,7 @@ from openai import OpenAI
 API_BASE_URL = os.environ.get("API_BASE_URL", "")
 MODEL_NAME   = os.environ.get("MODEL_NAME", "gpt-4o-mini")
 API_KEY      = os.environ.get("API_KEY", "")
+ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
 
 TASK_NAME  = "content_moderation"
 BENCHMARK  = "content_moderation_env"
@@ -45,12 +46,10 @@ def log_end(success, steps, rewards):
 # so a crash here never kills the process
 # -----------------------------
 def make_client():
-    """Return an OpenAI client, or None on any failure."""
     try:
-        from openai import OpenAI          # deferred import — safe even if pkg missing
         if not API_BASE_URL or not API_KEY:
             raise ValueError("API_BASE_URL or API_KEY is empty")
-        return OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+        return OpenAI(base_url=API_BASE_URL, api_key=API_KEY)  # ✅ correct
     except Exception as e:
         print(f"[DEBUG] Client init failed: {e}", flush=True)
         return None
@@ -177,7 +176,7 @@ def run_task(task_id, client):
 
     try:
         # ── Reset ──────────────────────────────────────────────
-        data = safe_post(f"{API_BASE_URL}/reset", {"task_id": task_id})
+        data = safe_post(f"{ENV_BASE_URL}/reset", {"task_id": task_id})
 
         if "observation" not in data:
             print(f"[DEBUG] Reset failed for {task_id}: {data}", flush=True)
@@ -219,7 +218,7 @@ def run_task(task_id, client):
                 action["decision"] = normalize_decision(action.get("decision"))
 
             # ── Send step ──────────────────────────────────────
-            step_data = safe_post(f"{API_BASE_URL}/step", {"action": action})
+            step_data = safe_post(f"{ENV_BASE_URL}/step", {"action": action})
 
             reward = float(step_data.get("reward", 0.0))
             done   = bool(step_data.get("done", False))

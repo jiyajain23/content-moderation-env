@@ -9,7 +9,7 @@ from openai import OpenAI
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:7860")
 MODEL_NAME = os.getenv("MODEL_NAME", "llama3-70b-8192")
 HF_TOKEN = os.getenv("HF_TOKEN")
-API_KEY = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+API_KEY = os.getenv("API_KEY") or os.getenv("HF_TOKEN")  # Validator's API_KEY takes priority
 LOCAL_IMAGE_NAME = os.getenv("LOCAL_IMAGE_NAME")
 
 TASK_NAME = "content_moderation"
@@ -18,28 +18,21 @@ MAX_STEPS = 10
 
 
 def create_client():
-    """Create an OpenAI-compatible client.
+    """Create an OpenAI-compatible client using the validator-injected env vars.
     Returns None instead of crashing when credentials are missing.
     """
+    # MUST use the validator's API_BASE_URL and API_KEY — never bypass
     base_url = os.getenv("API_BASE_URL")
-    api_key = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+    api_key = os.getenv("API_KEY") or os.getenv("HF_TOKEN")  # API_KEY first
 
-    try:
-        # Primary path: platform-provided API_BASE_URL + API_KEY
-        if base_url and api_key:
-            return OpenAI(api_key=api_key, base_url=base_url)
-
-        # Fallback: local Groq via HF_TOKEN
-        hf_token = os.getenv("HF_TOKEN")
-        if hf_token:
-            return OpenAI(
-                api_key=hf_token,
-                base_url="https://api.groq.com/openai/v1",
-            )
-
-        # No credentials at all → return None (fallback mode)
+    if not api_key:
         return None
 
+    try:
+        return OpenAI(
+            api_key=api_key,
+            base_url=base_url if base_url else "http://localhost:7860",
+        )
     except Exception:
         return None
 

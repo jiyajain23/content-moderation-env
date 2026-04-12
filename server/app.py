@@ -1,18 +1,26 @@
 """FastAPI server exposing the Content Moderation Environment via HTTP."""
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import Optional, List
-from fastapi.middleware.cors import CORSMiddleware
 
-# 1. IMPORT MODELS FIRST
-# We use the 'server.models' path to ensure Docker recognizes the package4
+import logging
+
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional
+
 try:
     from .models import Action, ResetResult, StepResult, StateResult
     from .env import ModerationEnv
+    from .tasks import TASKS
 except ImportError:
     from server.models import Action, ResetResult, StepResult, StateResult
     from server.env import ModerationEnv
+    from server.tasks import TASKS
 
+log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
 app = FastAPI(
     title="Context-Aware Content Moderation Environment",
     description="An OpenEnv-compatible environment for social media moderation.",
@@ -27,24 +35,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2. DEFINE REQUEST SCHEMAS
-# These must come AFTER 'Action' is imported but BEFORE the endpoints
+# ---------------------------------------------------------------------------
+# Request schemas
+# ---------------------------------------------------------------------------
 class ResetRequest(BaseModel):
     task_id: Optional[str] = None
 
 class StepRequest(BaseModel):
-    action: Action  # This works now because Action is imported at the top
+    action: Action
 
-# 3. INITIALIZE ENVIRONMENT
+# ---------------------------------------------------------------------------
+# Environment (module-level singleton)
+# ---------------------------------------------------------------------------
 env = ModerationEnv()
 
-# 4. ENDPOINTS
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 @app.get("/")
 def home():
     return {
-        "message": "Content Moderation Environment is running 🚀",
-        "docs": "/docs",
-        "health": "/health"
+        "message": "Content Moderation Environment is running",
+        "docs":    "/docs",
+        "health":  "/health",
     }
 
 @app.get("/health")
@@ -53,12 +66,11 @@ def health():
 
 @app.get("/tasks")
 def list_tasks():
-    from .tasks import TASKS
     return {
         "tasks": [
             {
-                "task_id": t["task_id"],
-                "difficulty": t["difficulty"],
+                "task_id":     t["task_id"],
+                "difficulty":  t["difficulty"],
                 "description": t["description"],
             }
             for t in TASKS
@@ -66,29 +78,33 @@ def list_tasks():
     }
 
 @app.post("/reset", response_model=ResetResult)
-def reset(request: Optional[ResetRequest] = None):
-    task_id = request.task_id if request else None
+def reset(request: ResetRequest = ResetRequest()):
+    """Reset the environment. Optionally supply a task_id."""
+    task_id = request.task_id
     try:
         obs = env.reset(task_id=task_id)
         return ResetResult(observation=obs)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=f"Task not found: {e}")
     except Exception as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        log.exception("Reset failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/step", response_model=StepResult)
 def step(request: StepRequest):
-    print("👉 Incoming action:", request.action)
+    log.info("Incoming action: %s", request.action)
 
     validation_error = request.action.validate_action()
     if validation_error:
-        print("❌ Validation error:", validation_error)
+        log.warning("Validation error: %s", validation_error)
         raise HTTPException(status_code=422, detail=validation_error)
-        
+
     try:
         obs, reward, done, info = env.step(request.action)
-        print("✅ Step success:", obs, reward, done)
+        log.info("Step result: reward=%.2f done=%s", reward, done)
         return StepResult(observation=obs, reward=reward, done=done, info=info)
     except Exception as e:
-        print("🔥 STEP ERROR:", str(e))   # 👈 IMPORTANT
+        log.exception("Step failed")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/state", response_model=StateResult)
@@ -97,11 +113,16 @@ def state():
         s = env.state()
         return StateResult(state=s)
     except Exception as e:
+        log.exception("State fetch failed")
         raise HTTPException(status_code=400, detail=str(e))
 
-
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
 def main():
     import uvicorn
+    logging.basicConfig(level=logging.INFO)
     uvicorn.run("server.app:app", host="0.0.0.0", port=7860)
+
 if __name__ == "__main__":
     main()
